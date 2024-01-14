@@ -1,4 +1,5 @@
 import java.io.File;
+import java.io.FileOutputStream;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -118,6 +119,10 @@ public class FileTransfer implements FT{
         c.update(fileData);
 
         byte[] endData = createEndData(sessionID, lastPNr+1, c);
+
+        byte[] crc = Arrays.copyOfRange(endData, 7, endData.length);
+        logger.log(Level.CONFIG, "Client-FT: CRC32 from Client: " + (long) TransUtil.bytesToInt(crc));
+
         logger.log(Level.CONFIG, "Client-FT: End created");
         myARQ.data_req(endData, endData.length, true);
         logger.log(Level.CONFIG, "Client-FT: End send");
@@ -150,6 +155,8 @@ public class FileTransfer implements FT{
 
         if (!marker.equals("Start")) return false;
 
+        byte[] end;
+
         ArrayList<byte[]> dataList = new ArrayList<>();
         while (true){
             try {
@@ -162,25 +169,34 @@ public class FileTransfer implements FT{
             byte[] bytes = Arrays.copyOfRange(data, 3, 7);
             marker = new String(bytes, StandardCharsets.UTF_8);
             logger.log(Level.CONFIG, "Server-FT: marker: " + marker);
-            if (marker.equals("Stop")) break;
+
+            if (marker.equals("Stop")) {
+                end = data;
+                break;
+            }
 
             dataList.add(data);
         }
 
         byte[] fileData = new byte[]{};
 
+        int i = 1;
         for (byte[] b : dataList ){
+            b = Arrays.copyOfRange(b, 0, 14000);
             fileData = TransUtil.appendBytes(fileData, getFileData(b));
+            logger.log(Level.CONFIG, "Server-FT: Packet added: " + i);
+            i++;
         }
-
-        fileData = Arrays.copyOfRange(fileData, 0, fileSize);
 
         CRC32 c = new CRC32();
         c.update(fileData);
 
-        byte[] crc = Arrays.copyOfRange(data, 7, data.length);
+        byte[] crc = Arrays.copyOfRange(end, 7, end.length);
 
-        if (TransUtil.bytesToInt(crc) == c.getValue()) {
+        logger.log(Level.CONFIG, "Server-FT: CRC32 from Client: " + (long) TransUtil.bytesToInt(crc));
+        logger.log(Level.CONFIG, "Server-FT: CRC32 from Server: " + c.getValue());
+
+        if ((long) TransUtil.bytesToInt(crc) == c.getValue()) {
             logger.log(Level.CONFIG, "Server-FT: CRC32 is valid and equal");
         } else {
             logger.log(Level.CONFIG, "Server-FT: CRC32 is not valid");
